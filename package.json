@@ -1,0 +1,25 @@
+{
+  "name": "@turbial/architect",
+  "version": "0.1.0",
+  "description": "Multi-repo code review & audit tool for Turbial org",
+  "bin": {
+    "architect": "./bin/architect.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "checks/"
+  ],
+  "scripts": {
+    "test": "node --test tests/",
+    "lint": "eslint bin/ src/ checks/",
+    "architect": "node bin/architect.mjs"
+  },
+  "keywords": [
+    "code-review",
+    "audit",
+    "github",
+    "turbial"
+  ],
+  "license": "MIT"
+}
