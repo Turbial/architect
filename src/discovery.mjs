@@ -1,11 +1,12 @@
 /**
- * Repo discovery — GitHub API listing
+ * Repo discovery — GitHub API listing with full metadata
  */
 
 const GITHUB_API = 'https://api.github.com';
 
 function authHeaders() {
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (!token) throw new Error('GITHUB_TOKEN or GH_TOKEN required');
   return {
     'Authorization': `Bearer ${token}`,
     'Accept': 'application/vnd.github.v3+json',
@@ -31,7 +32,7 @@ async function fetchSingleRepo(owner, repo) {
     console.error(`  ✗ Failed to fetch ${owner}/${repo}: ${res.status}`);
     return null;
   }
-  return res.json();
+  return enrichRepo(await res.json());
 }
 
 async function fetchOrgRepos(org) {
@@ -50,10 +51,81 @@ async function fetchOrgRepos(org) {
     const batch = await res.json();
     if (batch.length === 0) break;
 
-    repos.push(...batch);
+    repos.push(...batch.map(enrichRepo));
     page++;
     hasMore = batch.length === 100;
   }
 
   return repos;
+}
+
+function enrichRepo(repo) {
+  return {
+    full_name: repo.full_name,
+    name: repo.name,
+    owner: repo.owner?.login,
+    description: repo.description,
+    language: repo.language,
+    private: repo.private,
+    archived: repo.archived,
+    disabled: repo.disabled,
+    fork: repo.fork,
+    created_at: repo.created_at,
+    updated_at: repo.updated_at,
+    pushed_at: repo.pushed_at,
+    default_branch: repo.default_branch,
+    topics: repo.topics || [],
+    license: repo.license?.spdx_id || null,
+    size: repo.size,
+    stars: repo.stargazers_count,
+    forks: repo.forks_count,
+    open_issues: repo.open_issues_count,
+    has_issues: repo.has_issues,
+    has_wiki: repo.has_wiki,
+    has_pages: repo.has_pages,
+    clone_url: repo.clone_url,
+    ssh_url: repo.ssh_url,
+    homepage: repo.homepage,
+    html_url: repo.html_url,
+  };
+}
+
+/**
+ * Fetch repo contents tree via GitHub Contents API (no clone needed for shallow)
+ */
+export async function fetchRepoFileList(owner, repo, branch = 'main') {
+  const url = `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+  const res = await fetch(url, { headers: authHeaders() });
+
+  if (res.status === 409) {
+    // Empty repo
+    return [];
+  }
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch tree for ${owner}/${repo}: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return (data.tree || []).filter(item => item.type === 'blob').map(item => ({
+    path: item.path,
+    size: item.size,
+    mode: item.mode,
+  }));
+}
+
+/**
+ * Fetch a single file content from GitHub
+ */
+export async function fetchRepoFile(owner, repo, path, branch = 'main') {
+  const url = `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+  const res = await fetch(url, { headers: authHeaders() });
+
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  if (data.encoding === 'base64' && data.content) {
+    return Buffer.from(data.content, 'base64').toString('utf-8');
+  }
+  return null;
 }
