@@ -22,7 +22,40 @@ export async function discoverRepos(flags) {
     return r ? [r] : [];
   }
 
-  return await fetchOrgRepos(flags.org);
+  // Try org first, fall back to user account
+  try {
+    return await fetchOrgRepos(flags.org);
+  } catch (err) {
+    if (err.message.includes('404') || err.message.includes('Not Found')) {
+      console.error(`  ℹ️  ${flags.org} is not an org, trying as user account...`);
+      return await fetchUserRepos(flags.org);
+    }
+    throw err;
+  }
+}
+
+async function fetchUserRepos(username) {
+  const repos = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = `${GITHUB_API}/users/${username}/repos?per_page=100&page=${page}&sort=updated&type=owner`;
+    const res = await fetch(url, { headers: authHeaders() });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch user repos: ${res.status} ${res.statusText}`);
+    }
+
+    const batch = await res.json();
+    if (batch.length === 0) break;
+
+    repos.push(...batch.map(enrichRepo));
+    page++;
+    hasMore = batch.length === 100;
+  }
+
+  return repos;
 }
 
 async function fetchSingleRepo(owner, repo) {
